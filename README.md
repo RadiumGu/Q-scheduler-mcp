@@ -2,6 +2,8 @@
 
 A robust task scheduler server built with Model Context Protocol (MCP) for scheduling and managing various types of automated tasks.
 
+Fork from https://github.com/PhialsBasement/scheduler-mcp
+
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 
 ## Overview
