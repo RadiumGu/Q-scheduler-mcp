@@ -1,0 +1,23 @@
+{
+  "server": {
+    "name": "mcp-scheduler",
+    "version": "0.1.0",
+    "address": "localhost",
+    "port": 8080,
+    "transport": "stdio"
+  },
+  "database": {
+    "path": "scheduler.db"
+  },
+  "logging": {
+    "level": "INFO",
+    "file": "mcp_scheduler.log"
+  },
+  "scheduler": {
+    "check_interval": 5,
+    "execution_timeout": 300
+  },
+  "ai": {
+    "use_aws_q_model": true
+  }
+}

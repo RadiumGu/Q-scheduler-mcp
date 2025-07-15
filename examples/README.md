@@ -2,6 +2,25 @@
 
 本目录包含MCP Scheduler常见用例的示例脚本和配置。
 
+## 配置文件示例
+
+### aws_q_config.json
+
+一个专为Amazon Q集成优化的配置文件示例。
+
+**特点：**
+- 使用stdio传输模式，适合与Amazon Q集成
+- 启用AWS Q模型集成（`use_aws_q_model: true`）
+- 不需要OpenAI API密钥
+- 包含基本的日志和数据库设置
+
+**使用方法：**
+
+```bash
+# 使用AWS Q配置启动调度器
+uv run start_with_aws_q.py --config examples/aws_q_config.json
+```
+
 ## 备份脚本
 
 ### backup_mcp_config.sh
