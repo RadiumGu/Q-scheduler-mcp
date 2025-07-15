@@ -45,7 +45,7 @@ powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
 
 After installing uv, restart your terminal to ensure the command is available.
 
-### Project Setup
+### Project Setup with uv (recommended)
 
 ```bash
 # Clone the repository
@@ -86,17 +86,50 @@ pip install -r requirements.txt
 ### Running the Server
 
 ```bash
-# Run with default settings (stdio transport)
-python main.py
+# Activate the virtual environment first
+source .venv/bin/activate  # On Unix/MacOS
+# or
+.venv\Scripts\activate     # On Windows
 
-# Run with server transport on specific port
-python main.py --transport sse --port 8080
+# Run with default settings (stdio transport)
+uv run main.py
+
+# Run with AWS Q integration (recommended for Amazon Q users)
+uv run start_with_aws_q.py
 
 # Run with debug mode for detailed logging
-python main.py --debug
+uv run main.py --debug
+
+# Run with custom configuration file
+uv run main.py --config /path/to/config.json
 ```
 
-### Integrating with Claude Desktop or other MCP Clients
+The server uses stdio transport by default, which is ideal for integration with Amazon Q and other MCP clients. The server automatically handles the communication protocol based on the environment.
+
+### Integrating with Amazon Q, Claude Desktop or other MCP Clients
+
+### Amazon Q Integration
+
+To use MCP Scheduler with Amazon Q:
+
+1. Make sure you have Amazon Q CLI installed
+2. Run the scheduler with the AWS Q model patch:
+
+```bash
+# Start the scheduler with AWS Q integration
+python start_with_aws_q.py
+```
+
+This will automatically register the scheduler with Amazon Q, allowing you to create and manage tasks through natural language commands.
+
+Example commands:
+- "Create a scheduled task to backup my config file every night at 10:30 PM"
+- "Show me all my scheduled tasks"
+- "Run the backup task now"
+
+See the `examples` directory for more usage examples with Amazon Q.
+
+### Claude Desktop Integration
 
 To use your MCP Scheduler with Claude Desktop:
 
@@ -131,10 +164,18 @@ fastmcp install main.py --name "Task Scheduler"
 ```
 --address        Server address (default: localhost)
 --port           Server port (default: 8080)
---transport      Transport mode (sse or stdio) (default: stdio)
+--transport      Transport mode (stdio or sse) (default: stdio)
 --log-level      Logging level (default: INFO)
 --log-file       Log file path (default: mcp_scheduler.log)
 --db-path        SQLite database path (default: scheduler.db)
+--config         Path to JSON configuration file
+--ai-model       AI model to use for AI tasks (default: gpt-4o)
+--version        Show version and exit
+--debug          Enable debug mode with full traceback
+--fix-json       Enable JSON fixing for malformed messages
+```
+
+When using with Amazon Q, most of these options are automatically configured by the `start_with_aws_q.py` script.
 --config         Path to JSON configuration file
 --ai-model       AI model to use for AI tasks (default: gpt-4o)
 --version        Show version and exit
@@ -153,7 +194,7 @@ You can use a JSON configuration file instead of command-line arguments:
     "version": "0.1.0",
     "address": "localhost",
     "port": 8080,
-    "transport": "sse"
+    "transport": "stdio"
   },
   "database": {
     "path": "scheduler.db"
@@ -168,10 +209,37 @@ You can use a JSON configuration file instead of command-line arguments:
   },
   "ai": {
     "model": "gpt-4o",
-    "openai_api_key": "your-api-key"
+    "use_aws_q_model": true,
+    "openai_api_key": "your-api-key"  // Only needed if not using AWS Q model
   }
 }
 ```
+
+When using with Amazon Q, the `use_aws_q_model` should be set to `true` and no API key is required.
+
+## 重要说明
+
+### 任务类型和限制
+
+MCP Scheduler是一个应用级任务调度服务，而不是系统级定时任务管理器：
+
+- **应用级任务**：MCP Scheduler创建的任务存储在其自己的数据库中，只有在MCP Scheduler服务运行时才会执行
+- **非系统级**：这些任务不是系统crontab或systemd定时器，不会在系统启动时自动运行
+- **服务依赖**：如果MCP Scheduler服务停止，任务将不会执行
+- **用户权限**：任务以运行MCP Scheduler的用户权限执行，而不是root权限
+
+如果您需要系统级定时任务（在系统启动时自动运行或需要root权限），请考虑：
+
+1. 使用操作系统的`crontab -e`或`systemctl`直接创建系统级定时任务
+2. 创建一个MCP Scheduler任务，该任务执行脚本来管理系统级定时任务
+
+### 持久化和服务管理
+
+为确保MCP Scheduler在系统重启后继续运行，您可以：
+
+1. 将其设置为系统服务（使用systemd）
+2. 在用户登录时自动启动
+3. 在云环境中作为容器或服务运行
 
 ## MCP Tool Functions
 
@@ -221,81 +289,193 @@ The scheduler can be configured using environment variables:
 - `MCP_SCHEDULER_CHECK_INTERVAL`: How often to check for tasks (default: 5 seconds)
 - `MCP_SCHEDULER_EXECUTION_TIMEOUT`: Task execution timeout (default: 300 seconds)
 - `MCP_SCHEDULER_AI_MODEL`: OpenAI model for AI tasks (default: gpt-4o)
-- `OPENAI_API_KEY`: API key for OpenAI tasks
+- `MCP_SCHEDULER_USE_AWS_Q_MODEL`: Use AWS Q model for AI tasks (default: false)
+- `OPENAI_API_KEY`: API key for OpenAI tasks (not needed when using AWS Q model)
 
 ## Examples
 
-### Adding a Shell Command Task
+MCP Scheduler可以通过两种方式使用：通过Amazon Q等MCP客户端的自然语言交互，或者通过编程方式直接调用API。
 
-```python
-await scheduler.add_command_task(
-    name="Backup Database",
-    schedule="0 0 * * *",  # Midnight every day
-    command="pg_dump -U postgres mydb > /backups/mydb_$(date +%Y%m%d).sql",
-    description="Daily database backup",
-    do_only_once=False  # Recurring task
-)
+### 通过Amazon Q使用（推荐）
+
+使用Amazon Q创建和管理任务非常简单，只需使用自然语言描述您想要的任务：
+
+1. **创建命令任务**：
+   ```
+   创建一个定时任务，每天晚上10:30备份我的数据库到/backups目录
+   ```
+
+2. **创建API调用任务**：
+   ```
+   设置一个每6小时获取一次天气数据的任务
+   ```
+
+3. **创建AI任务**：
+   ```
+   每周一早上9点生成一份上周销售数据的摘要报告
+   ```
+
+4. **创建提醒任务**：
+   ```
+   每周二和周四上午9:30提醒我参加团队会议
+   ```
+
+5. **查看所有任务**：
+   ```
+   显示所有定时任务
+   ```
+
+6. **立即运行任务**：
+   ```
+   立即运行备份任务
+   ```
+
+### 通过编程API使用
+
+如果您正在开发应用程序或脚本，可以通过编程方式与MCP Scheduler交互。以下是建立调用关系的简要指南：
+
+### 1. 安装必要的依赖
+
+```bash
+# 使用uv安装（推荐）
+uv pip install "mcp[client]>=1.4.0"
 ```
 
-### Adding an API Task
+### 2. 建立连接并调用API
 
 ```python
-await scheduler.add_api_task(
-    name="Fetch Weather Data",
-    schedule="0 */6 * * *",  # Every 6 hours
-    api_url="https://api.weather.gov/stations/KJFK/observations/latest",
-    api_method="GET",
-    description="Get latest weather observations",
-    do_only_once=False
-)
+import asyncio
+from mcp.client import StdioClient
+
+async def main():
+    # 启动MCP Scheduler作为子进程
+    process_args = ["uv", "run", "/path/to/scheduler-mcp/main.py"]
+    async with StdioClient.create_subprocess(process_args) as client:
+        # 获取服务器信息
+        server_info = await client.call("get_server_info")
+        print(f"连接到 {server_info['name']} 版本 {server_info['version']}")
+        
+        # 列出所有任务
+        tasks = await client.call("list_tasks")
+        print(f"当前有 {len(tasks)} 个任务")
+        
+        # 添加一个命令任务
+        cmd_task = await client.call(
+            "add_command_task", 
+            {
+                "name": "系统状态检查",
+                "schedule": "*/30 * * * *",  # 每30分钟
+                "command": "vmstat > /tmp/vmstat_$(date +%Y%m%d_%H%M).log",
+                "description": "记录系统状态",
+                "do_only_once": False
+            }
+        )
+        print(f"创建命令任务: {cmd_task['id']}")
+        
+        # 立即运行一个任务
+        run_result = await client.call(
+            "run_task_now", 
+            {"task_id": cmd_task['id']}
+        )
+        print(f"任务执行结果: {run_result['execution']['status']}")
+
+# 运行主函数
+if __name__ == "__main__":
+    asyncio.run(main())
 ```
 
-### Adding an AI Task
+### 3. 连接到已运行的MCP Scheduler
+
+如果MCP Scheduler已经在HTTP模式下运行，可以使用SSE客户端连接：
 
 ```python
-await scheduler.add_ai_task(
-    name="Generate Weekly Report",
-    schedule="0 9 * * 1",  # 9 AM every Monday
-    prompt="Generate a summary of the previous week's sales data.",
-    description="Weekly sales report generation",
-    do_only_once=False
-)
+import asyncio
+from mcp.client import SseClient
+
+async def connect_to_running_scheduler():
+    async with SseClient("http://localhost:8080") as client:
+        tasks = await client.call("list_tasks")
+        print(f"当前有 {len(tasks)} 个任务")
+
+asyncio.run(connect_to_running_scheduler())
 ```
 
-### Adding a Reminder Task
+### 4. 错误处理
 
 ```python
-await scheduler.add_reminder_task(
-    name="Team Meeting",
-    schedule="30 9 * * 2,4",  # 9:30 AM every Tuesday and Thursday
-    message="Don't forget the team standup meeting!",
-    title="Meeting Reminder",
-    do_only_once=False
-)
+import asyncio
+from mcp.client import StdioClient
+from mcp.errors import McpError
+
+async def robust_scheduler_client():
+    try:
+        process_args = ["uv", "run", "/path/to/scheduler-mcp/main.py"]
+        async with StdioClient.create_subprocess(process_args) as client:
+            try:
+                result = await client.call("list_tasks")
+                return result
+            except McpError as e:
+                print(f"MCP API错误: {e}")
+                return []
+    except Exception as e:
+        print(f"连接错误: {e}")
+        return []
+
+asyncio.run(robust_scheduler_client())
 ```
 
-## MCP Auto-discovery Endpoint
+### 完整示例
 
-When running in SSE (HTTP) mode, MCP Scheduler exposes a well-known endpoint for tool/schema auto-discovery:
+查看 `examples/api_client_example.py` 获取完整的API使用示例，包括：
+- 连接到MCP Scheduler服务
+- 创建、运行、更新和删除任务
+- 获取任务执行历史
+- 错误处理和异常管理
 
+```bash
+# 运行示例
+cd examples
+./api_client_example.py
+```
+
+### 示例脚本
+
+`examples`目录包含了可直接使用的脚本和配置，适用于常见用例：
+
+- `backup_mcp_config.sh`：一个用于备份Amazon Q MCP配置文件的脚本，包含基于日期的命名和保留策略
+
+## MCP Tool Discovery
+
+MCP Scheduler supports automatic tool discovery through the Model Context Protocol:
+
+### Stdio Mode (Default)
+
+When running in stdio mode (the default), tool discovery happens automatically through the MCP protocol. This is the recommended mode for use with Amazon Q and other MCP clients that support stdio communication.
+
+```bash
+# Run in stdio mode (default)
+uv run main.py
+```
+
+### HTTP Mode (Optional)
+
+If you need to run the server in HTTP mode, you can use the SSE transport and access the schema through the well-known endpoint:
+
+```bash
+# Run with HTTP server transport
+uv run main.py --transport sse --port 8080
+```
+
+In HTTP mode, the server exposes a well-known endpoint for tool/schema auto-discovery:
 - **Endpoint:** `/.well-known/mcp-schema.json` (on the HTTP port + 1, e.g., if your server runs on 8080, the schema is on 8081)
 - **Purpose:** Allows clients and AI assistants to discover all available MCP tools and their parameters automatically.
 
-### Example
-
-If you run:
-
-```bash
-python main.py --transport sse --port 8080
-```
-
 You can access the schema at:
-
 ```
 http://localhost:8081/.well-known/mcp-schema.json
 ```
 
-### Example Response
+### Example Schema Response
 
 ```json
 {
@@ -351,10 +531,17 @@ uv pip install fastmcp
 
 # Testing your MCP server
 # With the MCP Inspector tool
-mcp inspect --stdio -- python main.py
+mcp inspect --stdio -- uv run main.py
 
 # Or with a simple MCP client
-python -m mcp.client.stdio python main.py
+python -m mcp.client.stdio uv run main.py
+
+# Running tests
+uv run -m pytest
+
+# Linting
+uv pip install flake8
+flake8 mcp_scheduler/
 ```
 
 ## Contributing
@@ -371,9 +558,3 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 This project is licensed under the MIT License - see the LICENSE file for details.
 
-## Acknowledgments
-
-- Built on the [Model Context Protocol](https://modelcontextprotocol.io/)
-- Uses [croniter](https://github.com/kiorky/croniter) for cron parsing
-- Uses [OpenAI API](https://openai.com/blog/openai-api) for AI tasks
-- Uses [FastMCP](https://github.com/jlowin/fastmcp) for enhanced MCP functionality
