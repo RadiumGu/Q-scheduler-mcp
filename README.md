@@ -117,7 +117,7 @@ To use MCP Scheduler with Amazon Q:
 
 ```bash
 # Start the scheduler with AWS Q integration
-python start_with_aws_q.py
+uv run start_with_aws_q.py
 ```
 
 This will automatically register the scheduler with Amazon Q, allowing you to create and manage tasks through natural language commands.
